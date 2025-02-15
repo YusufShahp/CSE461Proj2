@@ -59,52 +59,67 @@ class Part3Controller(object):
     def s1_setup(self):
         # put switch 1 rules here
         msg = of.ofp_flow_mod()
-        msg.actions.append(of.ofp_action_output(of.OFPP_FLOOD))
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         self.connection.send(msg)
 
     def s2_setup(self):
         # put switch 2 rules here
         msg = of.ofp_flow_mod()
-        msg.actions.append(of.ofp_action_output(of.OFPP_FLOOD))
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         self.connection.send(msg)
 
     def s3_setup(self):
         # put switch 3 rules here
         msg = of.ofp_flow_mod()
-        msg.actions.append(of.ofp_action_output(of.OFPP_FLOOD))
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         self.connection.send(msg)
 
     def cores21_setup(self):
         # put core switch rules here
         # ICMP from notrust
+        log.info("entered")
+
         msg = of.ofp_flow_mod()
+        msg.priority = 8
+        msg.match.dl_type = 0x800
+        msg.match.nw_dst = "172.16.10.100"
+        msg.actions.append(of.ofp_action_output(port=5))
+        self.connection.send(msg)
+
+        msg = of.ofp_flow_mod()
+        msg.priority = 10
         msg.match.dl_type = 0x800
         msg.match.nw_proto = 1
         msg.match.nw_src = "172.16.10.100"
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
+        msg.priority = 11
         msg.match.dl_type = 0x800
         msg.match.nw_src = "172.16.10.100"
         msg.match.nw_dst = "10.0.4.10"
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
+        msg.match.dl_type = 0x800
         msg.match.nw_dst = IPS["h10"]
         msg.actions.append(of.ofp_action_output(port=1))
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
+        msg.match.dl_type = 0x800
         msg.match.nw_dst = IPS["h20"]
         msg.actions.append(of.ofp_action_output(port=2))
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
+        msg.match.dl_type = 0x800
         msg.match.nw_dst = IPS["h30"]
         msg.actions.append(of.ofp_action_output(port=3))
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
+        msg.match.dl_type = 0x800
         msg.match.nw_dst = IPS["serv1"]
         msg.actions.append(of.ofp_action_output(port=4))
         self.connection.send(msg)
@@ -115,13 +130,15 @@ class Part3Controller(object):
         msg.actions.append(of.ofp_action_output(port=5))
         self.connection.send(msg)
 
+        log.info("nothing matched")
+
         msg = of.ofp_flow_mod()
-        self.connection.send(msg)        
+        self.connection.send(msg)
 
     def dcs31_setup(self):
         # put datacenter switch rules here
         msg = of.ofp_flow_mod()
-        msg.actions.append(of.ofp_action_output(of.OFPP_FLOOD))
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         self.connection.send(msg)
 
     # used in part 4 to handle individual ARP packets
