@@ -80,24 +80,15 @@ class Part3Controller(object):
         log.info("entered")
 
         msg = of.ofp_flow_mod()
-        msg.priority = 8
-        msg.match.dl_type = 0x800
-        msg.match.nw_dst = "172.16.10.100"
-        msg.actions.append(of.ofp_action_output(port=5))
-        self.connection.send(msg)
-
-        msg = of.ofp_flow_mod()
-        msg.priority = 10
         msg.match.dl_type = 0x800
         msg.match.nw_proto = 1
-        msg.match.nw_src = "172.16.10.100"
+        msg.match.nw_src = IPS["hnotrust"]
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
-        msg.priority = 11
         msg.match.dl_type = 0x800
-        msg.match.nw_src = "172.16.10.100"
-        msg.match.nw_dst = "10.0.4.10"
+        msg.match.nw_src = IPS["hnotrust"]
+        msg.match.nw_dst = IPS["serv1"]
         self.connection.send(msg)
 
         msg = of.ofp_flow_mod()
