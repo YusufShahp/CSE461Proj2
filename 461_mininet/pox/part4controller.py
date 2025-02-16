@@ -27,6 +27,13 @@ SUBNETS = {
     "hnotrust": "172.16.10.0/24",
 }
 
+MACS = {
+        "10.0.1.10": EthAddr("00:00:00:00:00:01"),
+        "10.0.2.10": EthAddr("00:00:00:00:00:02"),
+        "10.0.3.10": EthAddr("00:00:00:00:00:03"),
+        "10.0.4.10": EthAddr("00:00:00:00:00:04"),
+        "172.16.10.100": EthAddr("00:00:00:00:00:05"),
+}
 
 class Part4Controller(object):
     """
@@ -38,6 +45,7 @@ class Part4Controller(object):
         # Keep track of the connection to the switch so that we can
         # send it messages!
         self.connection = connection
+        self.arp_table = {}
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
@@ -58,23 +66,49 @@ class Part4Controller(object):
 
     def s1_setup(self):
         # put switch 1 rules here
-        pass
+        msg = of.ofp_flow_mod()
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        self.connection.send(msg)
 
     def s2_setup(self):
         # put switch 2 rules here
-        pass
+        msg = of.ofp_flow_mod()
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        self.connection.send(msg)
 
     def s3_setup(self):
         # put switch 3 rules here
-        pass
+        msg = of.ofp_flow_mod()
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        self.connection.send(msg)
 
     def cores21_setup(self):
         # put core switch rules here
-        pass
+        # put core switch rules here
+        # ICMP from notrust.
+        log.info("entered")
+
+        msg = of.ofp_flow_mod()
+        msg.match.dl_type = 0x800
+        msg.match.nw_proto = 1
+        msg.match.nw_src = IPS["hnotrust"]
+        self.connection.send(msg)
+
+        msg = of.ofp_flow_mod()
+        msg.match.dl_type = 0x800
+        msg.match.nw_src = IPS["hnotrust"]
+        msg.match.nw_dst = IPS["serv1"]
+        self.connection.send(msg)
+
+        msg = of.ofp_flow_mod()
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        self.connection.send(msg)
 
     def dcs31_setup(self):
         # put datacenter switch rules here
-        pass
+        msg = of.ofp_flow_mod()
+        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
+        self.connection.send(msg)
 
     # used in part 4 to handle individual ARP packets
     # not needed for part 3 (USE RULES!)
@@ -97,7 +131,43 @@ class Part4Controller(object):
             log.warning("Ignoring incomplete packet")
             return
 
-        packet_in = event.ofp  # The actual ofp_packet_in message.
+        #packet_in = event.ofp  # The actual ofp_packet_in message.
+
+        #ARP
+        if packet.type == packet.ARP_TYPE:
+            self.arp_table[packet.prodosrc] = (packet.hwsrc, event.port)
+            if packet.payload.opcode == arp.REQUEST:
+                target = str(packet.protodst)
+                arp_reply = arp()
+                arp_reply.hwsrc = MACS[target]
+                arp_reply.hwdst = packet.hwsrc
+                arp_reply.opcode = arp.REPLY
+                arp_reply.protosrc = IPAddr(target)
+                arp_reply.protodst = packet.payload.protosrc
+                ether = ethernet()
+                ether.type = ethernet.ARP_TYPE
+                ether.dst = packet.hwsrc
+                ether.src = MACS[target]
+                ether.payload = arp_reply
+
+                self.resend_packet(ether, event.port)
+                return
+            return #reply/anything else
+
+        elif packet.type == packet.IP_TYPE:
+            dst_ip = str(packet.dstip)
+            if dst_ip in self.arp_table:
+                dst_mac, out_port = MACS[dst_ip]
+                msg = of.ofp_flow_mod()
+                msg.match = of.ofp_match.from_packet(packet, event.port)
+                msg.actions.append(of.ofp_action_dl_addr.set_dst(dst_mac))
+                msg.actions.append(of.ofp_action_output(port=out_port))
+                self.connection.send(msg)
+                self.resend_packet(packet, out_port)
+            else: # dont know where to send
+                self.resend_packet(packet, of.OFPP_FLOOD)
+            return
+
         print(
             "Unhandled packet from " + str(self.connection.dpid) + ":" + packet.dump()
         )
