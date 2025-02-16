@@ -76,7 +76,7 @@ class Part3Controller(object):
 
     def cores21_setup(self):
         # put core switch rules here
-        # ICMP from notrust
+        # ICMP from notrust.
         log.info("entered")
 
         msg = of.ofp_flow_mod()
