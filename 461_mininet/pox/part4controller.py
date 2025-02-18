@@ -1,4 +1,4 @@
-# Part 4 of UWCSE's Mininet-SDN project
+# Part 4 of UWCSE's Mininet-SDN project:w !xclip -selection clipboard
 #
 # based on Lab Final from UCSC's Networking Class
 # which is based on of_tutorial by James McCauley
@@ -6,8 +6,8 @@
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from pox.lib.addresses import IPAddr, IPAddr6, EthAddr
-from pox.lib.packet.arp import arp
 from pox.lib.packet.ethernet import ethernet
+from pox.lib.packet.arp import arp
 
 log = core.getLogger()
 
@@ -29,13 +29,6 @@ SUBNETS = {
     "hnotrust": "172.16.10.0/24",
 }
 
-MACS = {
-        "10.0.1.10": EthAddr("00:00:00:00:00:01"),
-        "10.0.2.20": EthAddr("00:00:00:00:00:02"),
-        "10.0.3.30": EthAddr("00:00:00:00:00:03"),
-        "10.0.4.10": EthAddr("00:00:00:00:00:04"),
-        "172.16.10.100": EthAddr("00:00:00:00:00:05"),
-}
 
 class Part4Controller(object):
     """
@@ -47,7 +40,9 @@ class Part4Controller(object):
         # Keep track of the connection to the switch so that we can
         # send it messages!
         self.connection = connection
-        self.arp_table = {}
+
+        # Keep track of occupied ports
+        self.ports = set()
 
         # This binds our PacketIn event listener
         connection.addListeners(self)
@@ -86,8 +81,6 @@ class Part4Controller(object):
 
     def cores21_setup(self):
         # put core switch rules here
-        # put core switch rules here
-        # ICMP from notrust.
         log.info("entered")
 
         msg = of.ofp_flow_mod()
@@ -100,10 +93,6 @@ class Part4Controller(object):
         msg.match.dl_type = 0x800
         msg.match.nw_src = IPS["hnotrust"]
         msg.match.nw_dst = IPS["serv1"]
-        self.connection.send(msg)
-
-        msg = of.ofp_flow_mod()
-        msg.actions.append(of.ofp_action_output(port=of.OFPP_FLOOD))
         self.connection.send(msg)
 
     def dcs31_setup(self):
@@ -133,47 +122,45 @@ class Part4Controller(object):
             log.warning("Ignoring incomplete packet")
             return
 
-        packet_in = event.ofp  # The actual ofp_packet_in message.
+        #packet_in = event.ofp  # The actual ofp_packet_in message.
+        mac = EthAddr("00:11:22:33:44:55")  # Dummy ethernet address
+        inport = event.port
 
-        #ARP
         if packet.type == packet.ARP_TYPE:
-            self.arp_table[packet.payload.protosrc] = (packet.hwsrc, packet_in.in_port)
             if packet.payload.opcode == arp.REQUEST:
-                target = str(packet.payload.protodst)
+                # Install a flow rule for IP packets based on the ARP request's source IP
+                dest_ip = packet.next.protosrc
+                msg = of.ofp_flow_mod()
+                msg.match.dl_type = 0x800
+                msg.match.nw_dst = dest_ip
+                msg.actions.append(of.ofp_action_dl_addr.set_dst(packet.src))
+                msg.actions.append(of.ofp_action_output(port=inport))
+                self.connection.send(msg)
+                log.info(f"Installed new flow rule for incoming packets with dst={packet.payload.protosrc} through port={inport} on dpid={self.connection.dpid}")
+
+                # ARP reply
                 arp_reply = arp()
-                arp_reply.hwsrc = MACS[target]
-                arp_reply.hwdst = packet.src
+                arp_reply.prototype = arp.PROTO_TYPE_IP
                 arp_reply.opcode = arp.REPLY
-                arp_reply.protosrc = IPAddr(target)
-                arp_reply.protodst = packet.payload.protosrc
+                arp_reply.hwdst = packet.src
+                arp_reply.protodst = packet.next.protosrc
+                arp_reply.hwsrc = mac
+                arp_reply.protosrc = packet.next.protodst
+
                 ether = ethernet()
                 ether.type = ethernet.ARP_TYPE
-                ether.dst = packet.hwsrc
-                ether.src = MACS[target]
+                ether.dst = packet.src
+                ether.src = mac
                 ether.payload = arp_reply
+                self.resend_packet(ether, inport)
 
-                self.resend_packet(ether, event.port)
-                return
-            return #reply/anything else
+            elif packet.payload.opcode == arp.REPLY:
+                log.info("Received ARP reply")
+            else:
+                log.info(f"Unknown ARP opcode {packet.payload.opcode}")
 
-        elif packet.type == packet.IP_TYPE:
-            dst_ip = str(packet.dstip)
-            if dst_ip in self.arp_table:
-                dst_mac, out_port = self.arp_table[dst_ip]
-                msg = of.ofp_flow_mod()
-                msg.match = of.ofp_match.from_packet(packet, event.port)
-                msg.actions.append(of.ofp_action_dl_addr.set_dst(dst_mac))
-                msg.actions.append(of.ofp_action_output(port=out_port))
-                self.connection.send(msg)
-                self.resend_packet(packet, out_port)
-            else: # dont know where to send
-                self.resend_packet(packet, of.OFPP_FLOOD)
-            return
-
-        print(
-            "Unhandled packet from " + str(self.connection.dpid) + ":" + packet.dump()
-        )
-
+        else:
+            log.info("Unhandled packet type")
 
 def launch():
     """
