@@ -6,6 +6,8 @@
 from pox.core import core
 import pox.openflow.libopenflow_01 as of
 from pox.lib.addresses import IPAddr, IPAddr6, EthAddr
+from pox.lib.packet.arp import arp
+from pox.lib.packet.ethernet import ethernet
 
 log = core.getLogger()
 
@@ -29,8 +31,8 @@ SUBNETS = {
 
 MACS = {
         "10.0.1.10": EthAddr("00:00:00:00:00:01"),
-        "10.0.2.10": EthAddr("00:00:00:00:00:02"),
-        "10.0.3.10": EthAddr("00:00:00:00:00:03"),
+        "10.0.2.20": EthAddr("00:00:00:00:00:02"),
+        "10.0.3.30": EthAddr("00:00:00:00:00:03"),
         "10.0.4.10": EthAddr("00:00:00:00:00:04"),
         "172.16.10.100": EthAddr("00:00:00:00:00:05"),
 }
@@ -131,16 +133,16 @@ class Part4Controller(object):
             log.warning("Ignoring incomplete packet")
             return
 
-        #packet_in = event.ofp  # The actual ofp_packet_in message.
+        packet_in = event.ofp  # The actual ofp_packet_in message.
 
         #ARP
         if packet.type == packet.ARP_TYPE:
-            self.arp_table[packet.prodosrc] = (packet.hwsrc, event.port)
+            self.arp_table[packet.payload.protosrc] = (packet.hwsrc, packet_in.in_port)
             if packet.payload.opcode == arp.REQUEST:
-                target = str(packet.protodst)
+                target = str(packet.payload.protodst)
                 arp_reply = arp()
                 arp_reply.hwsrc = MACS[target]
-                arp_reply.hwdst = packet.hwsrc
+                arp_reply.hwdst = packet.src
                 arp_reply.opcode = arp.REPLY
                 arp_reply.protosrc = IPAddr(target)
                 arp_reply.protodst = packet.payload.protosrc
@@ -157,7 +159,7 @@ class Part4Controller(object):
         elif packet.type == packet.IP_TYPE:
             dst_ip = str(packet.dstip)
             if dst_ip in self.arp_table:
-                dst_mac, out_port = MACS[dst_ip]
+                dst_mac, out_port = self.arp_table[dst_ip]
                 msg = of.ofp_flow_mod()
                 msg.match = of.ofp_match.from_packet(packet, event.port)
                 msg.actions.append(of.ofp_action_dl_addr.set_dst(dst_mac))
